@@ -3,7 +3,7 @@
 Search US businesses with live data from OpenStreetMap. One static page, no server: every search asks
 OpenStreetMap's Overpass API for the businesses in the place you name, so results are as current as the map.
 
-**Try it:** https://geremyrobinson.github.io/index/
+**Try it:** https://geremyrobinson.github.io/Index/
 
 ## How it works
 
