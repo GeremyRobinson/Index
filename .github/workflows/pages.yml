@@ -1,4 +1,4 @@
-# Publishes the repo as a static site on GitHub Pages on every push to main.
+# Builds the site and publishes it to GitHub Pages on every push to main.
 name: Deploy to Pages
 on:
   push:
@@ -19,9 +19,15 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: .
+          path: dist
       - id: deployment
         uses: actions/deploy-pages@v4

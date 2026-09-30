@@ -1,0 +1,267 @@
+/* S01 / System One, with lessons from Fragment's product: the data is the illustration, search results are the UI,
+   and every motion reads as the index at work (paths resolving, digits rolling, values looked up).
+   Layout: one shell. Its foot is the bar (Index, Search, Outreach as separate pills); everything else (the index,
+   suggestions, outreach, the selection) grows up out of it as one accordion. It starts alone in the centre; once there
+   is something to look for, the index opens and pushes the bar to the bottom of the screen. */
+:root {
+  --text: #111; --muted: #8c8c8c; --faint: #c6c6c6; --rule: #e2e2e2;
+  --page: #fff; --well: #f4f4f4; --card: #fff;
+  --ok: #1fbf5f; --busy: #f5a524; --error: #ef4444;
+  --lh: 20px; --s: 5px; --u: 10px; /* spacing: 5px inside text-level items (pills, rows, label to value); 10px for panel padding and every gap; 20px only between page sections */ --ctl: var(--s) var(--u); /* every pill control: 5px top/bottom, 10px sides = 30px tall. A round badge leading a pill sits 5px from top, bottom and start. Containers of controls pad 5px, gap 5px. */ --r-panel: 22px; --r-card: 18px; --r-box: 12px;
+  --font: "ABC Areal Superfamily Variable", "ABC Areal", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --mono: "ABC Areal Superfamily Variable", "ABC Areal", ui-monospace, "SF Mono", Menlo, monospace;
+  --ease: cubic-bezier(.4, 0, .2, 1);
+  --drkm: 0;
+}
+@media (prefers-color-scheme: dark) { :root {
+  --text: #ececec; --muted: #858585; --faint: #4b4b4b; --rule: #2a2a2a; --page: #0b0b0b; --well: #161616; --card: #1f1f1f; --drkm: 100; color-scheme: dark; } }
+
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+/* No grey tap flash on mobile WebKit; controls show their own hover and press states. No double-tap zoom delay on controls. */
+button, a, label, input, .item-head, .hit { touch-action: manipulation; }
+[hidden] { display: none !important; }
+html, body { font-size: 14px; line-height: var(--lh); } /* 14px is the floor: nothing on the page is set smaller. */
+/* iPhone Safari zooms into any field under 16px when it is focused; on touch screens fields are set at 16px so it never does. */
+@media (pointer: coarse) { input, textarea, select { font-size: 16px !important; } }
+body { background: var(--page); color: var(--text); font-family: var(--font); font-weight: 400; font-variation-settings: "MONO" 0, "DRKM" var(--drkm); -webkit-font-smoothing: antialiased; }
+h1, h2, h3, p, dl, dd, ul { margin: 0; font-size: inherit; font-weight: 400; }
+button, input { font: inherit; color: inherit; }
+/* Type split: data is set in the system mono, the interface (labels, headings, controls, prose) in plain text at 400 to 550. */
+.mono, .kv > span:last-child, .stats div > span:last-child, .tree .nm, .tree .num, .hit .leaf, .hit .n, #count, .prov { font-family: var(--mono); font-variation-settings: "MONO" 100, "DRKM" var(--drkm); font-variant-numeric: tabular-nums; }
+.kv > span:last-child .prov { font-family: var(--font); font-variation-settings: "MONO" 0, "DRKM" var(--drkm); }
+.mono { font-family: var(--mono); font-variation-settings: "MONO" 100, "DRKM" var(--drkm); font-variant-numeric: tabular-nums; }
+.num { font-variant-numeric: tabular-nums; text-align: right; }
+.muted { color: var(--muted); }
+.trunc { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.label { text-transform: uppercase; color: var(--muted); padding-bottom: var(--s); border-bottom: 1px solid var(--rule); }
+:focus-visible { outline: 1px solid var(--text); outline-offset: 2px; }
+.dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; flex: none; background: var(--faint); vertical-align: middle; }
+.dot.ok { background: var(--ok); } .dot.busy { background: var(--busy); } .dot.error { background: var(--error); }
+
+a, button { transition: color .15s var(--ease), background-color .15s var(--ease); }
+@keyframes reveal { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+
+
+/* controls */
+.btn { background: var(--well); border: 0; border-radius: 999px; padding: var(--ctl); cursor: pointer; display: inline-flex; gap: var(--s); align-items: center; white-space: nowrap; }
+.btn:hover { color: var(--muted); }
+.btn[disabled] { color: var(--faint); cursor: default; }
+.kbd { color: var(--muted); }
+@media (pointer: coarse), (max-width: 560px) { .kbd { display: none; } } /* no shortcut hint on phones, where the field needs the room */
+.card { background: var(--card); border-radius: var(--r-card); padding: var(--u); display: grid; gap: var(--u); min-width: 0; align-content: start; }
+.card > .cap { display: flex; justify-content: space-between; gap: var(--u); }
+.segs { display: flex; flex-wrap: wrap; gap: var(--s); background: var(--well); border-radius: 999px; padding: var(--s); width: fit-content; max-width: 100%; }
+.seg { background: none; border: 0; border-radius: 999px; padding: 0 var(--u); cursor: pointer; color: var(--muted); white-space: nowrap; }
+.seg:hover { color: var(--text); }
+.seg[aria-pressed="true"] { background: var(--card); color: var(--text); }
+.seg .n { line-height: 1; color: var(--muted); font-family: var(--mono); font-variation-settings: "MONO" 100; }
+/* Tabs: the active segment is one pill that slides between segments; tabs never wrap, they scroll sideways. */
+.segs.tabs { position: relative; flex-wrap: nowrap; width: 100%; overflow-x: auto; scrollbar-width: none; }
+.segs.tabs::-webkit-scrollbar { display: none; }
+.segs.tabs .seg { position: relative; z-index: 1; flex: 1 1 auto; text-align: center; padding: 0 var(--s); transition: color .25s var(--ease); }
+.segs.tabs .seg[aria-pressed="true"] { background: none; }
+.tab-ind { position: absolute; left: 0; top: var(--s); height: var(--lh); border-radius: 999px; background: var(--card); transition: transform .3s var(--ease), width .3s var(--ease); pointer-events: none; }
+#tabpanel { display: grid; gap: var(--lh); min-width: 0; }
+
+/* The shell: one card that holds everything, with a 1px rule. The bar is its foot. Above the bar, in order: the selection,
+   the suggestions, and the stage (the index or outreach). Each one opens by growing its height, so the whole shell moves
+   like one accordion: when suggestions grow, the stage gives up the same room at the same speed. */
+:root { --float: .7s; --ease-out: cubic-bezier(.16, 1, .3, 1); --glide: .45s; --edge: calc(var(--u) * 2); }
+@media (max-width: 560px) { :root { --edge: var(--u); } }
+html, body { overflow: hidden; height: 100%; margin: 0; }
+.shell { --slide: .5s; position: fixed; z-index: 9; left: 0; right: 0; bottom: calc(var(--edge) + env(safe-area-inset-bottom, 0px)); margin: 0 auto; width: min(1040px, calc(100% - var(--u) * 2)); display: flex; flex-direction: column; padding: var(--s); border-radius: var(--r-panel); background: var(--card); outline: 1px solid var(--rule); outline-offset: -1px; transition: transform var(--slide) cubic-bezier(.65, 0, .35, 1), width var(--slide) cubic-bezier(.65, 0, .35, 1); }
+
+/* The stage: the index or outreach. Its height is set in fitStage(): its content, up to what the screen has left. */
+.stage { height: 0; overflow: hidden; border-bottom: 0 solid var(--rule); transition: margin .3s var(--ease); }
+.shell.open .stage { border-bottom-width: 1px; margin-bottom: var(--s); }
+.stage.glide { transition: height .55s var(--ease-out), margin var(--glide) var(--ease-out); }
+.stage-in { height: 100%; overflow-y: auto; overscroll-behavior: contain; padding: 0 var(--s); scrollbar-width: thin; scrollbar-color: var(--faint) transparent; }
+.view { display: grid; gap: var(--u); padding-bottom: var(--u); min-width: 0; }
+/* A view's heading and controls stay pinned while its rows scroll under them. */
+.view-head { position: sticky; top: 0; z-index: 2; display: grid; gap: var(--u); padding-top: var(--u); background: var(--card); }
+.view-head > .cap { display: flex; justify-content: space-between; gap: var(--u); }
+
+/* The bar: three separate pills, Index, Search and Outreach, in one strip. */
+.bar { display: flex; gap: var(--s); align-items: center; min-width: 0; }
+.bar .logo { font-weight: 550; }
+.bar .btn[aria-pressed="true"] { background: var(--text); color: var(--page); }
+.bar .btn[aria-pressed="true"]:hover { color: var(--page); opacity: .85; }
+@media (max-width: 560px) { #outbtn .lbl { display: none; } #outbtn { width: 30px; height: 30px; padding: 0; justify-content: center; } }
+/* The field is a grey pill. Tags are 20px pills inside it, and only the tags scroll, so the search icon stays put. */
+.field { flex: 1; min-width: 12ch; display: flex; align-items: center; gap: var(--s); background: var(--well); border-radius: 999px; padding: var(--ctl); cursor: text; overflow: hidden; }
+.field .i { color: var(--muted); }
+.field input { flex: 1; min-width: 6ch; border: 0; background: none; outline: none; padding: 0; font: inherit; color: inherit; caret-color: var(--text); }
+.field input::placeholder { color: var(--muted); transition: color .2s var(--ease); }
+.field:focus-within { outline: 1px solid var(--text); outline-offset: -1px; }
+.field:focus-within input::placeholder { color: var(--faint); }
+.field:focus-within .kbd, .field.has .kbd { display: none; }
+.tags { display: flex; gap: var(--s); flex: 0 1 auto; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+.tags::-webkit-scrollbar { display: none; }
+.tags:empty { display: none; }
+.tags.clipped { -webkit-mask-image: linear-gradient(to right, transparent, #000 15px); mask-image: linear-gradient(to right, transparent, #000 15px); }
+.tag-chip { display: inline-flex; align-items: center; gap: var(--s); height: 20px; padding: 0 7px 0 5px; border: 0; border-radius: 999px; background: var(--card); color: var(--text); font: inherit; white-space: nowrap; cursor: pointer; flex: none; } /* 7px after the text balances the icon's own 2px of air before it */
+.tag-chip:has(> .dot) { padding-left: 7px; }
+.tag-chip .ti, .hit .ti { color: var(--muted); display: block; }
+.tag-chip .x { display: none; }
+.tag-chip:not(.ghost):hover > .ti, .tag-chip:not(.ghost):hover > .dot, .tag-chip.sel > .ti, .tag-chip.sel > .dot { display: none; }
+.tag-chip:not(.ghost):hover > .x, .tag-chip.sel > .x { display: block; }
+.tag-chip.sel { outline: 1px solid var(--text); outline-offset: -1px; }
+.tag-chip.ghost { background: none; outline: 1px solid var(--rule); outline-offset: -1px; cursor: inherit; }
+@media (prefers-reduced-motion: no-preference) { .tag-chip.born { animation: born .3s var(--ease-out) both; } @keyframes born { from { opacity: 0; transform: scale(.85); } } }
+.hit .chips { display: inline-flex; gap: var(--s); align-items: center; min-width: 0; overflow: hidden; }
+
+/* Suggestions: only while you type. The tray's height follows its content (set in renderTray). */
+.tray { height: 0; overflow: hidden; transition: height var(--glide) var(--ease-out); }
+#segs { display: flex; flex-direction: column-reverse; flex-wrap: nowrap; width: 100%; max-width: none; max-height: 40vh; overflow-y: auto; background: none; border-radius: var(--r-card); padding: 0 0 var(--s); gap: 0; }
+#segs .hit { width: 100%; }
+
+/* The selection: picked businesses and what to do with them, one row above the bar. */
+.selrow { display: grid; grid-template-rows: 0fr; transition: grid-template-rows var(--glide) var(--ease-out); }
+.selrow.open { grid-template-rows: 1fr; }
+.selrow-in { overflow: hidden; min-height: 0; }
+.selrow-box { display: grid; gap: var(--s); padding-bottom: var(--s); }
+.selrow .acts { gap: var(--s); flex-wrap: nowrap; }
+.selrow .cnt { padding: var(--ctl); white-space: nowrap; margin-right: auto; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+@media (max-width: 480px) { .selrow .wide { display: none; } #sel-add { text-transform: capitalize; } }
+.selrow .segs { border-radius: var(--r-card); width: 100%; }
+.selrow .seg { padding: var(--ctl); }
+.selrow .seg:hover { background: var(--card); color: var(--text); }
+#biz .cap, #outreach .cap { min-width: 0; }
+
+/* List: every business is one 30px row, grouped by city in location order.
+   Hover fills the row grey; opening it grows that grey into a panel holding the full record. */
+.toolbar { display: flex; align-items: center; gap: var(--s); flex-wrap: wrap; }
+.toolbar .order { color: var(--muted); margin-left: auto; padding-inline: var(--s); white-space: nowrap; }
+.toolbar .order:not(:empty) + #sort { margin-left: 0; }
+#mode, #sort { width: auto; flex: none; }
+#sort { margin-left: auto; }
+/* Icons: Lucide (ISC). 16px, stroke 1.5 on its 24px grid, which draws the S01 1px line. Colour follows the text. */
+.i { width: 16px; height: 16px; flex: none; display: block; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+.btn.icon { width: 30px; height: 30px; padding: 0; justify-content: center; }
+.segs .seg.icon { display: inline-grid; place-items: center; height: 20px; padding: 0 7px; flex: none; }
+.list { display: grid; }
+/* Rows and city headings out of view skip layout and paint, so opening a row stays smooth with thousands in the list. */
+.list > .item:not(.open), .list > .grp { content-visibility: auto; contain-intrinsic-size: auto 30px; }
+#biz .lhead, #biz .item-head { display: grid; grid-template-columns: minmax(0, 1fr) 18% 20% 7ch 7px; gap: var(--u); align-items: baseline; }
+#biz.nokm .lhead, #biz.nokm .item-head { grid-template-columns: minmax(0, 1fr) 18% 20% 7px; }
+#biz.nokm .km { display: none; }
+@media (max-width: 600px) { .c-hide { display: none; } }
+@media (max-width: 600px) {
+  #biz .lhead, #biz .item-head { grid-template-columns: minmax(0, 1fr) 7ch 7px; }
+  #biz.nokm .lhead, #biz.nokm .item-head { grid-template-columns: minmax(0, 1fr) 7px; }
+}
+.lhead { color: var(--muted); padding: 0 var(--u) var(--s); border-bottom: 1px solid var(--rule); }
+.lhead .num, .item-head .num { text-align: right; }
+.grp { display: flex; justify-content: space-between; gap: var(--u); color: var(--muted); padding: var(--s) var(--u); margin-top: var(--s); border-top: 1px solid var(--rule); }
+.grp:first-child { margin-top: 0; border-top: 0; }
+.item { border-radius: 15px; transition: background-color .15s var(--ease), border-radius .35s var(--ease), margin .35s var(--ease), box-shadow .15s var(--ease); }
+.item-head { width: 100%; height: 30px; background: none; border: 0; border-radius: 15px; text-align: left; cursor: pointer; padding: var(--ctl); transition: padding .35s var(--ease), height .35s var(--ease); }
+.item-head > * { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.item-head .dot { justify-self: end; align-self: center; }
+.item-head:focus-visible { outline-offset: -1px; }
+.nm { font-family: var(--mono); font-variation-settings: "MONO" 100, "DRKM" var(--drkm); }
+.item:hover, .item.picked, .item.open { background: var(--well); }
+/* Selected rows that touch join into one block, like highlighted text. */
+.item.picked:not(.open):has(+ .item.picked:not(.open)) { border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
+.item.picked:not(.open) + .item.picked:not(.open) { border-top-left-radius: 0; border-top-right-radius: 0; }
+.item.picked .nm, .item.open .nm { font-weight: 500; }
+#biz.selecting .item:not(.picked):hover { background: none; box-shadow: inset 0 0 0 1px var(--rule); }
+/* Open: the grey reaches 5px past the row on every side and its corners relax to the panel radius, while the text stays put. */
+.item.open { border-radius: var(--r-panel); margin: var(--s) calc(var(--s) * -1); }
+.item.open .item-head { height: 40px; padding: var(--u) calc(var(--u) + var(--s)); } /* text sits 15px from the panel's top and its start: even on both sides */
+.item-body { display: grid; grid-template-rows: 0fr; transition: grid-template-rows .35s var(--ease); }
+.item.open .item-body { grid-template-rows: 1fr; }
+.item-body > div { overflow: hidden; min-height: 0; }
+.item .sheet { margin: 0 var(--s) var(--s); border-radius: calc(var(--r-panel) - var(--s)); }
+.instant, .instant * { transition: none !important; }
+@media (prefers-reduced-motion: no-preference) { .item.new { animation: reveal .3s ease-out both; animation-delay: calc(var(--i, 0) * 25ms); } }
+.empty { padding: var(--s) var(--u); }
+.rec-top { display: flex; justify-content: space-between; align-items: center; gap: var(--u); flex-wrap: wrap; }
+.rec-top > .lead { flex: 1 1 160px; } /* the status is a pill like the buttons, so both top corners sit 10px in */
+.pill { background: var(--well); border-radius: 999px; padding: var(--ctl); height: 30px; color: var(--muted); }
+/* A status dot leading text: centred on the line, 5px from the word. */
+.lead { display: inline-flex; align-items: center; gap: var(--s); min-width: 0; }
+.lead > .trunc { min-width: 0; }
+.rec-top .acts { gap: var(--s); flex-wrap: nowrap; }
+
+.reels { display: inline-flex; vertical-align: top; }
+.reel { display: inline-block; height: var(--lh); overflow: hidden; }
+.reel > span { display: flex; flex-direction: column; transition: transform .5s var(--ease); }
+.reel > span > span { height: var(--lh); line-height: var(--lh); }
+@media (prefers-reduced-motion: reduce) { .reel > span { transition: none; } }
+.prov { background: var(--card); border-radius: 999px; padding: 0 var(--s); color: var(--muted); white-space: nowrap; margin-left: var(--s); }
+.form .r.walk { filter: blur(2px); opacity: .35; }
+.form .r.lit { filter: none; opacity: 1; transition: filter .3s ease-out, opacity .3s ease-out; }
+.form .r { position: relative; }
+/* record */
+.recname { display: grid; }
+.form { display: grid; gap: var(--s); }
+.form .rows { background: var(--well); border-radius: var(--r-box); overflow: hidden; }
+.form .r { display: grid; grid-template-columns: minmax(0, 1fr) auto; border-bottom: 1px solid var(--card); min-height: var(--lh); align-items: center; }
+.form .r:last-child { border-bottom: 0; }
+.form .r > span { padding: var(--s) var(--u); min-width: 0; overflow-wrap: anywhere; }
+.form .r .act { padding: 0 var(--s); }
+.form .r .act button { background: var(--card); border: 0; border-radius: 999px; padding: 0 var(--u); cursor: pointer; color: var(--muted); }
+.form .r .act button:hover { color: var(--text); }
+.kv { display: grid; grid-template-columns: 11ch minmax(0, 1fr); gap: var(--u); }
+.kv .k { color: var(--muted); }
+/* Bento: one grey box split by 1px lines in the card colour, the same construction as the fact rows below it */
+.stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1px; background: var(--card); border-radius: var(--r-box); overflow: hidden; }
+.stats div { display: grid; background: var(--well); padding: var(--s) var(--u); min-width: 0; }
+.tree { display: grid; }
+.tree button { display: grid; grid-template-columns: 2ch minmax(0, 1fr) auto; gap: var(--s); background: none; border: 0; padding: var(--s) 0; text-align: left; cursor: pointer; }
+.tree button:hover .nm { color: var(--muted); }
+.json { margin: 0; overflow-x: auto; max-height: 320px; white-space: pre; color: var(--muted); background: var(--well); border-radius: var(--r-box); padding: var(--u); }
+.json b { font-weight: 400; color: var(--text); }
+a.ext { color: var(--muted); text-decoration: none; justify-self: start; background: var(--well); border-radius: 999px; padding: var(--ctl); }
+a.ext:hover { color: var(--text); }
+
+/* settings */
+.fields { display: grid; gap: var(--u); }
+.acts { display: flex; gap: var(--u); flex-wrap: wrap; align-items: center; }
+
+/* suggestion rows: paths resolve left to right, state to city to the business */
+.hit { display: flex; gap: var(--s); align-items: center; padding: var(--ctl); border-radius: 999px; cursor: pointer; white-space: nowrap; overflow: hidden; }
+.hit .p { color: var(--muted); }
+.hit .sep { color: var(--faint); }
+.hit .leaf { overflow: hidden; text-overflow: ellipsis; }
+.hit .n { color: var(--muted); margin-left: auto; padding-left: var(--u); }
+.hit[aria-selected="true"] { background: var(--well); }
+.hit[aria-selected="true"] .leaf { font-weight: 500; }
+.hit .pi, .hit .sep { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.hit .sep { flex-shrink: 0; }
+.hit .pi:has(.leaf) { flex-shrink: 0; max-width: 75%; }
+@media (prefers-reduced-motion: no-preference) { .hit .pi { animation: resolve .25s ease-out both; } @keyframes resolve { from { opacity: 0; transform: translateX(-3px); filter: blur(2px); } to { opacity: 1; transform: none; } } }
+
+/* outreach: bulk select, groups, contact log, campaigns */
+.nmw { display: flex; align-items: baseline; min-width: 0; }
+.nmw .tag { flex: none; }
+.tag { display: inline-block; background: var(--well); border-radius: 999px; padding: 0 var(--s); margin-left: var(--s); color: var(--muted); font-family: var(--font); font-variation-settings: "MONO" 0, "DRKM" var(--drkm); }
+.plain, .kv > span.plain { font-family: var(--font); font-variation-settings: "MONO" 0, "DRKM" var(--drkm); }
+.newg { display: inline-flex; gap: var(--s); align-items: center; background: var(--well); border-radius: 999px; padding-left: var(--u); }
+.plain-in { background: none; border: 0; padding: 0; min-width: 0; outline: none; font: inherit; color: inherit; width: 100%; }
+.plain-in::placeholder { color: var(--faint); }
+.field-row { display: grid; grid-template-columns: 11ch minmax(0, 1fr); align-items: center; gap: var(--u); background: var(--well); border-radius: var(--r-box); padding: var(--s) var(--u); }
+.area { width: 100%; resize: vertical; background: var(--well); border: 0; border-radius: var(--r-box); padding: var(--s) var(--u); font: inherit; color: inherit; outline: none; line-height: var(--lh); }
+.area:focus-visible, .field-row:focus-within { outline: 1px solid var(--text); outline-offset: -1px; }
+.segs.chips { border-radius: var(--r-card); width: 100%; background: var(--well); }
+.segs.chips .seg { padding: var(--ctl); }
+.segs.chips .seg[aria-pressed="true"] { background: var(--card); color: var(--text); }
+.stats.four { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+@media (max-width: 480px) { .stats.four { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.meter { height: 2px; background: var(--rule); border-radius: 2px; overflow: hidden; }
+.meter i { display: block; height: 100%; background: var(--text); transition: width .3s var(--ease); }
+button.r.runrow { width: 100%; background: none; border: 0; border-bottom: 1px solid var(--card); text-align: left; cursor: pointer; padding: 0; }
+.draft { background: var(--card); margin: 0 var(--s) var(--s); border-radius: var(--r-box); padding: var(--s) var(--u); white-space: pre-wrap; }
+@media (prefers-reduced-motion: no-preference) { .dot.pulse { animation: pulse 1s ease-in-out infinite; } @keyframes pulse { 50% { opacity: .35; } } }
+
+/* Idle: only the bar, centred, and one quiet line under it. The stage waits inside the shell at zero height.
+   The offset lifts the bar from its bottom anchor to the middle of the screen (half the 40px bar). */
+body.idle .shell { transform: translateY(calc(-50vh + var(--edge) + 20px)); width: min(680px, calc(100% - var(--u) * 2)); }
+@supports (height: 1dvh) { body.idle .shell { transform: translateY(calc(-50dvh + var(--edge) + 20px)); } }
+body.idle .shell:not(:focus-within) { width: min(600px, calc(100% - var(--u) * 2)); }
+body.idle .selrow { grid-template-rows: 0fr; }
+/* It hangs under the shell itself, so it stays centred on the bar. */
+.readout { position: absolute; left: 0; right: 0; top: calc(100% + var(--u)); text-align: center; color: var(--muted); pointer-events: none; opacity: 0; transition: opacity .3s var(--ease); }
+body.idle .readout { opacity: 1; transition-delay: .3s; }
+@media (prefers-reduced-motion: reduce) { .shell, .stage, .tray, .selrow { transition: none !important; } }
