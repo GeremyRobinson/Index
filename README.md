@@ -9,6 +9,8 @@ OpenStreetMap's Overpass API for the businesses in the place you name, so result
 
 - Type a place and what you want: "cafe in chicago", "dentist in seattle", "bakery in chicago with email",
   "coffee in texas", "restaurants within 2 mi of me". Words the page knows become tags.
+- Plain words ("plastic surgery", "sushi", "tesla") search business names and the tags that say what a place
+  does (specialty, cuisine, shop type, brand, description) across the whole metro area.
 - A city search covers its centre (a few miles; wider when you name a kind or sector). "within N mi of"
   sets the radius. A state search needs a kind or sector ("cafes in texas") so the answer stays small.
 - Businesses come from OpenStreetMap tags (shop, amenity, office, craft, leisure, tourism, healthcare) and are
@@ -18,6 +20,11 @@ OpenStreetMap's Overpass API for the businesses in the place you name, so result
   `?overpass=URL` pins one server.
 
 The free Overpass servers are shared: a search takes a few seconds, and heavy use gets slowed down.
+
+## Files
+
+- `index.html`: the page (about 160 KB; 50 KB compressed).
+- `places.json`: the 5,500 US cities the search recognises, with their centres. Loaded after the page appears.
 
 ## Data
 
