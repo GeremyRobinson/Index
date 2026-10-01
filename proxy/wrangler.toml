@@ -1,0 +1,7 @@
+name = "index-jev"
+main = "worker.js"
+compatibility_date = "2026-09-01"
+
+[vars]
+# Pages allowed to ask Jev through this worker, comma separated. Add http://localhost:5173 to test locally.
+ALLOWED_ORIGINS = "https://geremyrobinson.github.io"

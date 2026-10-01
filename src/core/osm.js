@@ -75,8 +75,15 @@ const IndexOSM = (() => {
     const pat = textPattern(text); if (!pat) return null;
     return [`nwr["name"~"${pat}",i]`, ...TEXT_KEYS.map(k => `nwr["name"]["${k}"~"${pat}",i]`)];
   }
-  function clauses({ sector = [], entityType = [] }, text) {
-    if (!sector.length && !entityType.length) { const t = textClauses(text); if (t) return t; }
+  // hints: the kinds (or, failing those, sectors) Jev says plain words are probably about. They are fetched alongside the
+  // name matches, so "somewhere to fix my laptop" also asks for electronics repair shops, which share none of its words.
+  function clauses({ sector = [], entityType = [] }, text, hints = null) {
+    if (!sector.length && !entityType.length) {
+      const t = textClauses(text);
+      const kinds = (hints?.entityType || []).slice(0, 4), vs = kinds.flatMap(k => kindValue(k).split("|"));
+      const more = vs.length ? KEYS.map(k => [k, vs]) : (hints?.sector || []).slice(0, 2).flatMap(s => SECTOR_Q[s] || []);
+      if (t || more.length) return [...(t || []), ...more];
+    }
     // A kind is one tag value under any business key; exact keys use Overpass's index, a key pattern wouldn't.
     if (entityType.length) { const vs = entityType.flatMap(k => kindValue(k).split("|")); return KEYS.map(k => [k, vs]); }
     if (sector.length) return sector.flatMap(s => SECTOR_Q[s] || []);
@@ -156,7 +163,7 @@ const IndexOSM = (() => {
     const areas = new Map(); // ql -> the area it asks about, for filling in city and state
     const placeOf = ql => areas.get(ql) || {};
     const limitOf = ql => +(ql.match(/out center tags qt (\d+)/) || [0, limit])[1];
-    const narrowedBy = q => { const f = q.filters || {}; return (f.sector || []).length || (f.entityType || []).length ? true : textPattern(q.text) ? "text" : false; };
+    const narrowedBy = q => { const f = q.filters || {}; return (f.sector || []).length || (f.entityType || []).length ? true : textPattern(q.text) || q.hints?.entityType?.length ? "text" : false; };
     const self = {
       name: "OpenStreetMap", live: true, last: null,
       // Where a search looks, in words people can read back.
@@ -176,7 +183,7 @@ const IndexOSM = (() => {
       query(q) {
         const a = self.area(q);
         const where = a.iso ? "(area.a)" : `(around:${Math.round(a.km * 1000)},${a.lat.toFixed(4)},${a.lng.toFixed(4)})`;
-        const body = clauses(q.filters || {}, q.text).map(c => clauseQL(c, where)).join("\n");
+        const body = clauses(q.filters || {}, q.text, q.hints).map(c => clauseQL(c, where)).join("\n");
         // Broad asks (every kind of business) are capped lower than narrow ones, so they come back quickly.
         const cap = a.narrowed ? limit : Math.min(limit, 1500);
         const ql = `[out:json][timeout:20];${a.iso ? `area["ISO3166-2"="${a.iso}"]->.a;` : ""}\n(${body}\n);\nout center tags qt ${cap};`;
