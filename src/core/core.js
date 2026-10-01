@@ -28,10 +28,13 @@ const IndexCore = (() => {
 
   const tokenize = s => (s || "").toLowerCase().normalize("NFKD").replace(/[^\w\s-]/g, " ").split(/\s+/).filter(Boolean);
 
-  function score(e, terms) {
-    if (!terms.length) return 1;
+  // Words find candidates; they no longer have to all match. A business matching more of the words, in better fields, scores higher,
+  // and one of the kinds or sectors the search is likely about (hints, from Jev) stays in the running with no shared word at all.
+  function score(e, terms, hints) {
+    const hint = hints && (hints.entityType?.includes(e.entityType) ? 2 : hints.sector?.includes(e.sector) ? 0.5 : 0);
+    if (!terms.length) return 1 + (hint || 0);
     const fields = [[e.name,5],[e.legalName,4],[e.entityNumber,6],[e.sector,3],[e.entityType,3],[e.city,3],[e.tags.join(" "),2],[e.description,1],[e.naics,3]];
-    let total = 0;
+    let total = 0, hit = 0;
     for (const t of terms) {
       let best = 0;
       for (const [v, w] of fields) {
@@ -41,10 +44,11 @@ const IndexCore = (() => {
         else if (t.length >= 4 && toks.some(x => near1(x, t))) best = Math.max(best, w * 0.4); // one typo allowed
         else if (t.length > 5 && toks.some(x => x.startsWith(t.slice(0, -2)))) best = Math.max(best, w * 0.4); // same stem: surgeon, surgery
       }
-      if (!best) return 0; // every term must match somewhere
+      if (best) hit++;
       total += best;
     }
-    return total;
+    // Matching every word still beats matching most of them.
+    return (hit ? total * (hit === terms.length ? 2 : hit / terms.length) : 0) + (hint || 0);
   }
 
   // True when a and b differ by at most one edit (typo tolerance for words of 4+ letters).
@@ -92,15 +96,17 @@ const IndexCore = (() => {
       get providers() { return providers.map(p => p.name); },
       // filters: { key: value | [values] } (a list matches any of its values); where: an extra predicate from the host app.
       // has / missing: contact fields a remote source can check before it answers, so its limit isn't spent on rows the page drops.
-      async search({ text = "", filters = {}, near = null, radiusKm = null, where = null, limit = 50, sort = "relevance", has = [], missing = [] } = {}) {
+      // hints: { sector: [], entityType: [] } the search is probably about (see IndexJudge.understand); providers fetch them too.
+      async search({ text = "", filters = {}, near = null, radiusKm = null, where = null, limit = 50, sort = "relevance", has = [], missing = [], hints = null } = {}) {
         const errors = [], metas = [];
         const batches = await Promise.all(providers.map(p =>
-          p.search({ text, filters, near, radiusKm, limit, sort, has, missing }).then(rs => { if (rs.meta) metas.push(rs.meta); return rs.map(r => { let e = normalized.get(r); if (!e) normalized.set(r, e = normalize(r, p.name)); return e; }); })
+          p.search({ text, filters, near, radiusKm, limit, sort, has, missing, hints }).then(rs => { if (rs.meta) metas.push(rs.meta); return rs.map(r => { let e = normalized.get(r); if (!e) normalized.set(r, e = normalize(r, p.name)); return e; }); })
            .catch(err => { errors.push({ provider: p.name, message: err.message }); return []; })));
         const byKey = new Map();
         for (const e of batches.flat()) { const k = mergeKey(e); byKey.set(k, byKey.has(k) ? merge(byKey.get(k), e) : e); }
-        const terms = tokenize(text);
-        let items = [...byKey.values()].map(e => ({ e, s: score(e, terms) })).filter(x => x.s > 0);
+        // Two-letter words (to, my, la) would match the start of half the index once words are optional, so they count only alone.
+        let terms = tokenize(text); if (terms.some(t => t.length > 2)) terms = terms.filter(t => t.length > 2);
+        let items = [...byKey.values()].map(e => ({ e, s: score(e, terms, hints) })).filter(x => x.s > 0);
         const all = items.map(x => x.e);
         for (const [k, v] of Object.entries(filters)) if (Array.isArray(v) ? v.length : v) items = items.filter(x => Array.isArray(v) ? v.includes(x.e[k]) : x.e[k] === v);
         if (where) items = items.filter(x => where(x.e));

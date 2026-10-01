@@ -44,6 +44,15 @@ store.set("theme", null); store.set("jev.key", null); store.set("jev.url", null)
 export const jevCache = new Map();
 let jevT;
 export const judge = () => { const u = store.get("jev.endpoint"); return u ? IndexJudge.typesafe({ endpoint: u }) : IndexJudge.standIn(); };
+// Jev reads a phrase once: the tags it implies, and the kinds and sectors it is probably about. The tray and the list share the answer.
+const readings = new Map();
+export function understood(text) {
+  const key = text.trim().toLowerCase();
+  if (!readings.has(key)) readings.set(key, IndexJudge.understand(judge(), key, qvocab(), IndexQuery.tag)
+    .then(r => { if (S.jevStatus.value !== "ok" && store.get("jev.endpoint")) S.jevStatus.value = "ok"; return r; })
+    .catch(() => { S.jevStatus.value = "error"; readings.delete(key); return IndexJudge.understand(IndexJudge.standIn(), key, qvocab(), IndexQuery.tag); }));
+  return readings.get(key);
+}
 // Answers are cached per phrase; a new phrase is asked for after a short pause in typing.
 function jevFor(text) {
   const key = text.trim().toLowerCase();
@@ -51,9 +60,7 @@ function jevFor(text) {
   clearTimeout(jevT);
   jevT = setTimeout(async () => {
     jevCache.set(key, { pending: true });
-    let r;
-    try { r = await IndexJudge.understand(judge(), key, qvocab(), IndexQuery.tag); if (S.jevStatus.value !== "ok" && store.get("jev.endpoint")) S.jevStatus.value = "ok"; }
-    catch { S.jevStatus.value = "error"; r = await IndexJudge.understand(IndexJudge.standIn(), key, qvocab(), IndexQuery.tag); }
+    const r = await understood(key);
     jevCache.set(key, r);
     if (liveQuery().rest.trim().toLowerCase() === key) renderHits();
   }, 350);
@@ -242,14 +249,41 @@ export function originFor(q) {
   const city = q.filters.city.length === 1 && q.filters.city[0], c = city && cityCenters.get(city);
   return c ? { ...c, label: `Out from central ${city}` } : null;
 }
+// Plain words are ranked the way madewithjev's YC Indexor ranks: words and Jev's likely kinds nominate candidates,
+// then Jev reads each candidate and says how likely it is what the person meant. Those probabilities order the list.
+const fits = new Map(); // `${words}\u0000${id}` -> probability, so refining a search doesn't ask about the same business twice
+const JUDGED = 240, SHOWN = 0.3, FEWEST = 9; // candidates read per search; the bar for being shown; the closest few always show
 export async function run() {
-  const seq = ++runSeq, q = compiled(), o = originFor(q);
+  const seq = ++runSeq, q = compiled(), o = originFor(q), text = q.text;
+  // Words are read once typing pauses, so each keystroke doesn't start its own Jev and OpenStreetMap requests.
+  if (text) { await new Promise(res => setTimeout(res, 250)); if (seq !== runSeq) return; }
+  // Jev reads the whole ask, including words the parser already turned into kind or sector tags ("pet store" is the Pet tag plus "store").
+  const said = text && [...liveQuery().tags.filter(t => ["type", "sector", "phrase", "exclude"].includes(t.kind)).map(t => t.label), text].join(" ");
+  const u = text ? await understood(said) : null;
+  if (seq !== runSeq) return;
+  const hints = u && (u.kinds.length || u.sectors.length) ? { entityType: u.kinds, sector: u.sectors } : null;
   if (live) {
-    const lq = { text: q.text, filters: q.filters, near: o, radiusKm: q.near ? q.radiusKm : null, limit: 5000 };
+    const lq = { text, filters: q.filters, near: o, radiusKm: q.near ? q.radiusKm : null, limit: 5000, hints };
     S.where.value = live.cached(lq) ? "" : `Asking OpenStreetMap about ${live.area(lq).label}…`;
   }
-  const r = await core.search({ text: q.text, filters: q.filters, near: o, radiusKm: q.near ? q.radiusKm : null, has: q.has, missing: q.missing, where: q.where, sort: o ? "distance" : "north", limit: 5000 });
+  const r = await core.search({ text, filters: q.filters, near: o, radiusKm: q.near ? q.radiusKm : null, has: q.has, missing: q.missing, where: q.where, hints, sort: text ? "relevance" : o ? "distance" : "north", limit: 5000 });
   if (seq !== runSeq) return;
+  let ranked = text ? "words" : null;
+  if (text && u?.live && r.items.length) {
+    const cands = r.items.slice(0, JUDGED), need = cands.filter(e => !fits.has(said + "\u0000" + e.id));
+    if (need.length) {
+      S.where.value = `Jev is reading ${need.length.toLocaleString()} matches…`;
+      const ps = await IndexJudge.rank(judge(), said, need);
+      if (seq !== runSeq) return;
+      if (ps) need.forEach((e, i) => ps[i] != null && fits.set(said + "\u0000" + e.id, ps[i]));
+      else S.jevStatus.value = "error";
+    }
+    const scored = cands.map(e => ({ e, p: fits.get(said + "\u0000" + e.id) })).filter(x => x.p != null).sort((a, b) => b.p - a.p);
+    if (scored.length) {
+      r.items = scored.filter((x, i) => x.p >= SHOWN || i < FEWEST).map(x => ({ ...x.e, fit: x.p }));
+      r.total = r.items.length; ranked = "jev";
+    }
+  }
   lastFacets = r.facets;
   let where = "";
   if (live) {
@@ -257,6 +291,7 @@ export async function run() {
     where = !a ? "" : l.error ? "OpenStreetMap didn't answer" : `Live · ${IndexQuery.STATE_NAME[a.label] || a.label.replace(/^Out from/, "out from")}${a.km ? `, ${a.km < 1.6 ? a.km.toFixed(1) + " km" : Math.round(a.km * 0.621371) + " mi"}` : ""}${l.capped ? " · first " + l.count.toLocaleString() : ""}`;
     if (a?.city && !l.error) store.set("index.place", a.city);
   }
+  if (ranked === "jev") where += `${where ? " · " : ""}ranked by Jev`;
   r.items.forEach(e => allById.set(e.id, e));
   // Rows that stay glide to their new place; new rows fade in; the first arrival cascades down (see List).
   const before = new Map(), motion = !reduced() && !isIdle();
@@ -266,7 +301,7 @@ export async function run() {
   batch(() => {
     S.where.value = where;
     if (!S.tags.value.length && !q.text) S.readout.value = source?.kind === "live" ? "Live from OpenStreetMap · any US city · © OpenStreetMap contributors" : `${(r.total ?? 0).toLocaleString()} businesses indexed${source?.kind === "server" ? " across the US" : ""} · © OpenStreetMap contributors`;
-    S.res.value = { items: r.items, total: r.total ?? 0, origin: o, errors: r.errors, facets: r.facets, prev: shownIds, entering, flip: motion ? { before, entering, hold: stageHold, inView } : null };
+    S.res.value = { items: r.items, total: r.total ?? 0, origin: o, ranked, errors: r.errors, facets: r.facets, prev: shownIds, entering, flip: motion ? { before, entering, hold: stageHold, inView } : null };
     if (openId && !r.items.some(e => e.id === openId)) S.openId.value = null;
   });
   if (!isIdle()) entering = false;

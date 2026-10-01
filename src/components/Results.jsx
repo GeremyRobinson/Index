@@ -24,7 +24,7 @@ function Item({ e, i, open, isNew, picked, selecting, last, onHead }) {
       <button class="item-head" aria-expanded={String(open)} aria-pressed={selecting ? String(picked) : undefined} onClick={ev => onHead(ev, e.id)}>
         <span class="nmw"><span class="nm trunc">{e.name}</span>{last && <span class="tag" title={`${last.status === "sent" ? "Emailed" : "Draft written"} ${ago(last.at)}`}>✉ {ago(last.at)}</span>}</span>
         <span class="c-hide muted">{e.entityType || ""}</span><span class="c-hide muted">{e.sector}</span>
-        <span class="km num mono muted">{e.distanceKm != null ? miles(e.distanceKm) + " mi" : "—"}</span>
+        <span class="km num mono muted" title={e.fit != null ? "How likely Jev thinks this is what you meant" : undefined}>{e.fit != null ? Math.round(e.fit * 100) + "%" : e.distanceKm != null ? miles(e.distanceKm) + " mi" : "—"}</span>
         <span class={`dot ${dotFor(e.status)}`} title={cap(e.status)} />
       </button>
       <div class="item-body"><div>{(open || linger.current) && <Record e={e} />}</div></div>
@@ -90,9 +90,11 @@ function List() {
     body = [];
     for (let i = 0; i < Math.min(shown, items.length); i++) {
       const e = items[i];
-      if (i === 0 || items[i - 1].city !== e.city) {
-        let n = 0; for (let j = i; j < items.length && items[j].city === e.city; j++) n++;
-        body.push(<div class="grp" role="presentation" data-city={e.city || ""} key={"g:" + (e.city || "") + ":" + e.id}><span>{e.city || "No city"}</span><span class="mono">{n}</span></div>);
+      // A ranked list is one block, best first; otherwise rows are grouped by city.
+      if (res.ranked ? i === 0 : i === 0 || items[i - 1].city !== e.city) {
+        let n = 0; if (res.ranked) n = items.length; else for (let j = i; j < items.length && items[j].city === e.city; j++) n++;
+        const head = res.ranked === "jev" ? "Best matches" : res.ranked ? "Matching words" : e.city || "No city";
+        body.push(<div class="grp" role="presentation" data-city={res.ranked ? "ranked" : e.city || ""} key={"g:" + (res.ranked ? "ranked" : e.city || "") + ":" + e.id}><span>{head}</span><span class="mono">{n}</span></div>);
       }
       body.push(<Item key={e.id} e={e} i={i} open={openId === e.id} isNew={!res.entering && !res.prev.has(e.id)} picked={picked.has(e.id)} selecting={selecting} last={lastOf.get(e.id)} onHead={onHead} />);
     }
@@ -115,7 +117,7 @@ export function Results() {
   const res = S.res.value, mode = S.mode.value, items = res.items, picked = S.picked.value;
   const all = items.length > 0 && items.every(e => picked.has(e.id));
   return (
-    <section class={cx("view", !res.origin && "nokm", mode === "select" && "selecting")} id="biz" aria-labelledby="res-h" hidden={S.view.value !== "results"}>
+    <section class={cx("view", !res.origin && res.ranked !== "jev" && "nokm", mode === "select" && "selecting")} id="biz" aria-labelledby="res-h" hidden={S.view.value !== "results"}>
       <div class="view-head">
         <div class="cap"><h2 class="label" id="res-h" style="flex:1;display:flex;justify-content:space-between">
           <span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Businesses <span id="res-where" class="muted" style="text-transform:none;font-weight:400">{S.where.value}</span></span>
@@ -129,7 +131,7 @@ export function Results() {
           <span class="order" id="order" role="status">{S.order.value}</span>
           <Sort />
         </div>
-        <div class="lhead" aria-hidden="true"><span>Name</span><span class="c-hide">Kind</span><span class="c-hide">Sector</span><span class="km num">Distance</span><span /></div>
+        <div class="lhead" aria-hidden="true"><span>Name</span><span class="c-hide">Kind</span><span class="c-hide">Sector</span><span class="km num">{res.ranked === "jev" ? "Fit" : "Distance"}</span><span /></div>
       </div>
       <List />
     </section>
